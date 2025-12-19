@@ -1,6 +1,7 @@
 add_executable(minidrive_server
     src/main.cpp
-    src/simple_server.cpp
+    src/server.cpp
+    src/session.cpp
 )
 
 target_include_directories(minidrive_server
