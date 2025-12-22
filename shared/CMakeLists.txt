@@ -1,5 +1,6 @@
 add_library(minidrive_shared STATIC
     src/version.cpp
+    src/async_socket.cpp
 )
 
 target_include_directories(minidrive_shared

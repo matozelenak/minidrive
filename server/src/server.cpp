@@ -44,8 +44,8 @@ void MiniDriveServer::accept() {
             socket.remote_endpoint().address().to_string(),
             socket.remote_endpoint().port());
 
-        auto session = std::make_unique<Session>(*this, std::move(socket));
-        session->doRead();
+        auto session = std::make_unique<Session>(this, std::move(socket));
+        session->start();
         _addSession(std::move(session));
 
         accept();
@@ -62,10 +62,12 @@ void MiniDriveServer::_addSession(std::unique_ptr<Session> session) {
 
 void MiniDriveServer::_cleanupSessions() {
     std::lock_guard g(_listMutex);
-    for (auto it = _sessions.begin(); it != _sessions.end(); ++it) {
-        const auto& session = *it;
-        if (session->isDead()) _sessions.erase(it);
+    spdlog::debug("list size: {}", _sessions.size());
+    for (auto it = _sessions.begin(); it != _sessions.end();) {
+        if ((*it)->isDead()) it = _sessions.erase(it);
+        else ++it;
     }
+
 }
 
 void MiniDriveServer::_timerHandler(const asio::error_code& ec) {
@@ -77,6 +79,7 @@ void MiniDriveServer::_timerHandler(const asio::error_code& ec) {
         spdlog::error("timer: {}", ec.message());
         return;
     }
+    // spdlog::debug("timer!");
     _cleanupSessions();
     _timer.expires_after(std::chrono::seconds(TIMER_PERIOD));
     _timer.async_wait(_timerFunc);

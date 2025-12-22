@@ -19,7 +19,7 @@ private:
     void _timerHandler(const asio::error_code& ec);
 
 
-    inline const static int TIMER_PERIOD = 3;
+    inline const static int TIMER_PERIOD = 60;
 
     std::atomic<bool> _running;
     uint16_t _port;
