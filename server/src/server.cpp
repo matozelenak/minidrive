@@ -4,9 +4,12 @@
 #include <memory>
 #include <chrono>
 #include <functional>
+#include <filesystem>
 #include <spdlog/spdlog.h>
+#include "session.hpp"
 
 using asio::ip::tcp;
+namespace fs = std::filesystem;
 
 MiniDriveServer::MiniDriveServer(asio::io_context &io, uint16_t port, std::string &rootDir)
     : _port(port), _rootDir(rootDir), _io(io), _acceptor(io, tcp::endpoint(tcp::v4(), port)),
@@ -19,16 +22,29 @@ MiniDriveServer::MiniDriveServer(asio::io_context &io, uint16_t port, std::strin
 void MiniDriveServer::start() {
     if (_running) return;
     _running = true;
-
+    if (!fs::exists(".minidrive")) {
+        spdlog::info("creating '.minidrive' directory...");
+        try {
+            fs::create_directory(".minidrive");
+        } catch (const fs::filesystem_error &e) {
+            spdlog::error("create_directory: {}", e.what());
+            stop();
+            return;
+        }
+    }
+    if (!_authModule.loadConfig()) {
+        stop();
+        return;
+    }
     accept();
-
     _timer.async_wait(_timerFunc);
 }
 
 void MiniDriveServer::stop() {
     if (!_running) return;
     _running = false;
-
+    _authModule.saveConfig();
+    _io.stop();
     _timer.cancel();
 }
 

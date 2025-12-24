@@ -1,10 +1,13 @@
 #pragma once
-#include "session.hpp"
 #include <asio.hpp>
 #include <string>
 #include <list>
 #include <memory>
 #include <mutex>
+#include "auth.hpp"
+#include "session.hpp"
+
+// class Session;
 
 class MiniDriveServer {
 public:
@@ -12,6 +15,10 @@ public:
     void start();
     void stop();
     void accept();
+
+    inline bool auth_userExists(const std::string &username) const {return _authModule.userExists(username);}
+    inline bool auth_verifyPassword(const std::string &username, const std::string &password) const {return _authModule.verifyPassword(username, password);}
+    inline bool auth_createUser(const std::string &username, const std::string &password) {return _authModule.createUser(username, password);}
 
 private:
     void _addSession(std::unique_ptr<Session> session);
@@ -31,4 +38,6 @@ private:
 
     asio::steady_timer _timer;
     std::function<void(const asio::error_code&)> _timerFunc;
+
+    AuthModule _authModule;
 };

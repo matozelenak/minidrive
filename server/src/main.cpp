@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <asio.hpp>
+#include <sodium.h>
 
 #include "minidrive/version.hpp"
 #include "server.hpp"
@@ -39,6 +40,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    if (sodium_init() < 0) {
+        spdlog::error("libsodium could not be initialized");
+        return 1;
+    }
+
     asio::io_context io;
 
     // create the server
@@ -49,7 +55,6 @@ int main(int argc, char* argv[]) {
     signals.async_wait([&io, &server](const asio::error_code& ec, int sig) {
         if (!ec) {
             spdlog::info("Received signal {}, shutting down gracefully...", sig);
-            io.stop();
             server.stop();
         }
         else {
