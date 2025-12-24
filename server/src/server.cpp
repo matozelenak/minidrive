@@ -7,12 +7,13 @@
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include "session.hpp"
+#include "globals.hpp"
 
 using asio::ip::tcp;
 namespace fs = std::filesystem;
 
-MiniDriveServer::MiniDriveServer(asio::io_context &io, uint16_t port, std::string &rootDir)
-    : _port(port), _rootDir(rootDir), _io(io), _acceptor(io, tcp::endpoint(tcp::v4(), port)),
+MiniDriveServer::MiniDriveServer(asio::io_context &io, uint16_t port)
+    : _port(port), _io(io), _acceptor(io/*, tcp::endpoint(tcp::v4(), port)*/),
       _timer(io) {
         
     _timer.expires_after(std::chrono::seconds(TIMER_PERIOD));
@@ -22,12 +23,22 @@ MiniDriveServer::MiniDriveServer(asio::io_context &io, uint16_t port, std::strin
 void MiniDriveServer::start() {
     if (_running) return;
     _running = true;
-    if (!fs::exists(".minidrive")) {
-        spdlog::info("creating '.minidrive' directory...");
+    if (!fs::exists(PUBLIC_DIR_PATH)) {
+        spdlog::info("creating public directory");
         try {
-            fs::create_directory(".minidrive");
+            fs::create_directories(PUBLIC_DIR_PATH);
         } catch (const fs::filesystem_error &e) {
-            spdlog::error("create_directory: {}", e.what());
+            spdlog::error("create_directories: {}", e.what());
+            stop();
+            return;
+        }
+    }
+    if (!fs::exists(USERDATA_DIR_PATH)) {
+        spdlog::info("creating user_data directory");
+        try {
+            fs::create_directories(USERDATA_DIR_PATH);
+        } catch (const fs::filesystem_error &e) {
+            spdlog::error("create_directories: {}", e.what());
             stop();
             return;
         }
@@ -36,6 +47,31 @@ void MiniDriveServer::start() {
         stop();
         return;
     }
+
+    // open and bind the socket
+    tcp::endpoint addr(tcp::v4(), _port);
+    try {
+        _acceptor.open(addr.protocol());
+    } catch (const asio::system_error &e) {
+        spdlog::critical("open(): could not open socket: {}", e.what());
+        stop();
+        return;
+    }
+    try {
+        _acceptor.bind(addr);
+    } catch (const asio::system_error &e) {
+        spdlog::critical("bind(): could not bind socket: {}", e.what());
+        stop();
+        return;
+    }
+    try {
+        _acceptor.listen();
+    } catch (const asio::system_error &e) {
+        spdlog::critical("listen(): could not start listening for connections: {}", e.what());
+        stop();
+        return;
+    }
+
     accept();
     _timer.async_wait(_timerFunc);
 }

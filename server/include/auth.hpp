@@ -15,6 +15,4 @@ public:
 private:
     nlohmann::json _config;
 
-    inline const static std::string USERS_FILE = "users.json";
-    inline const static std::filesystem::path USERS_FILE_PATH = std::filesystem::path(".minidrive") / USERS_FILE;
 };

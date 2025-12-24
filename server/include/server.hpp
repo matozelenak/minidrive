@@ -11,7 +11,7 @@
 
 class MiniDriveServer {
 public:
-    MiniDriveServer(asio::io_context &io, uint16_t port, std::string &rootDir);
+    MiniDriveServer(asio::io_context &io, uint16_t port);
     void start();
     void stop();
     void accept();
@@ -30,7 +30,6 @@ private:
 
     std::atomic<bool> _running;
     uint16_t _port;
-    std::string _rootDir;
     asio::io_context &_io;
     asio::ip::tcp::acceptor _acceptor;
     std::list<std::unique_ptr<Session>> _sessions;

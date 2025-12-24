@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 #include <sodium.h>
+#include "globals.hpp"
 
 namespace fs = std::filesystem;
 using nlohmann::json;
@@ -14,7 +15,7 @@ bool AuthModule::loadConfig() {
     if (!fs::exists(USERS_FILE_PATH)) {
         spdlog::info("users file does not exists, creating it...");
         std::ofstream out(USERS_FILE_PATH);
-        out << "{}\n";
+        out << R"({"users":[]})" << '\n';
         out.close();
         if (out.fail()) {
             spdlog::error("users file could not be created");
@@ -31,13 +32,9 @@ bool AuthModule::loadConfig() {
         spdlog::error("authModule: {}", e.what());
         return false;
     }
-    if (_config.contains("users")) {
-        if (!_config["users"].is_array()) {
-            spdlog::error("invalid users file structure");
-            return false;
-        }
-    } else {
-        _config["users"] = json::array();
+    if (!_config.contains("users") || !_config["users"].is_array()) {
+        spdlog::error("invalid users file structure");
+        return false;
     }
     spdlog::info("user database loaded");
     return true;

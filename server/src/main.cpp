@@ -8,6 +8,7 @@
 #include <sodium.h>
 
 #include "minidrive/version.hpp"
+#include "globals.hpp"
 #include "server.hpp"
 
 int main(int argc, char* argv[]) {
@@ -40,6 +41,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // set up paths
+    ROOT_DIR_PATH = rootDir;
+    USERS_FILE_PATH = ROOT_DIR_PATH / USERS_FILE;
+    PUBLIC_DIR_PATH = ROOT_DIR_PATH / PUBLIC_DIR;
+    USERDATA_DIR_PATH = ROOT_DIR_PATH / USERDATA_DIR;
+
     if (sodium_init() < 0) {
         spdlog::error("libsodium could not be initialized");
         return 1;
@@ -48,7 +55,7 @@ int main(int argc, char* argv[]) {
     asio::io_context io;
 
     // create the server
-    MiniDriveServer server(io, port, rootDir);
+    MiniDriveServer server(io, port);
 
     // set up signal handler
     asio::signal_set signals(io, SIGINT, SIGTERM, SIGHUP);
