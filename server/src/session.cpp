@@ -2,17 +2,18 @@
 #include <asio.hpp>
 #include <memory>
 #include <string>
-#include <istream>
-#include <mutex>
+#include <filesystem>
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 #include <cstdint>
 
 #include "minidrive/error_codes.hpp"
 #include "server.hpp"
+#include "globals.hpp"
 
 using asio::ip::tcp;
 using nlohmann::json;
+namespace fs = std::filesystem;
 
 Session::Session(MiniDriveServer *server, tcp::socket &&cmdSocket)
     :  _server(server), _cmdSocket(std::move(cmdSocket)), _mode(mode::NOT_AUTHENTICATED) {
@@ -90,107 +91,17 @@ void Session::processMessage(const MsgPayload &payload) {
         return;
     }
     const std::string &cmd = data["cmd"];
-
-    handleMessage(cmd, data);
-}
-
-void Session::handleMessage(const std::string &cmd, const json &data) {
     const json &args = data.contains("args") ? data["args"] : json::object();
 
     try {
         spdlog::info("command: {}", cmd);
-        if (cmd == "LIST") {
-            std::string path;
-            if (args.contains("path")) {
-                path = args["path"];
-            }
-            // if path is absolute, prepend only the USER directory
-            // otherwise prepend USER and CWD
-            // ask server to list files
-            sendOkReply("toto je odpoved!");
-        }
-        else if (cmd == "AUTH") {
-            // TODO error if already authenticated
-            if (_mode != mode::NOT_AUTHENTICATED) {
-                spdlog::warn("session already authenticated");
-                sendFailReply(minidrive::error::ALREADY_AUTHENTICATED.code(), "");
-                return;
-            }
-            if (!data.contains("mode")) { // check if request contains 'mode' argument
-                spdlog::warn("request does not contain 'mode'");
-                sendFailReply(minidrive::error::MISSING_ARGUMENT.code(), "mode");
-                return;
-            }
-            const std::string &mode = data["mode"];
-            // public mode
-            if (mode == "public") {
-                _mode = mode::PUBLIC;
-                spdlog::info("authenticated as public user");
-                sendOkReply("running as public user");
-            }
-            // private mode
-            else if (mode == "private") {
-                spdlog::info("attempting authentication as private user");
-                if (!args.contains("username")) {
-                    spdlog::warn("request does not contain 'username'");
-                    sendFailReply(minidrive::error::MISSING_ARGUMENT, "username");
-                    return;
-                }
-                if (!args.contains("password")) {
-                    spdlog::warn("request does not contain 'password'");
-                    sendFailReply(minidrive::error::MISSING_ARGUMENT, "password");
-                    return;
-                }
-                const std::string &username = args["username"];
-                const std::string &password = args["password"];
-                if (_server->auth_userExists(username)) {
-                    if (_server->auth_verifyPassword(username, password)) {
-                        _mode = mode::PRIVATE;
-                        _username = username;
-                        spdlog::info("authentication success, user: '{}'", username);
-                        sendOkReply("");
-                    } else {
-                        spdlog::warn("incorrect password for user '{}'", username);
-                        sendFailReply(minidrive::error::INCORRECT_PASSWORD.code(), "");
-                    }
-                } else {
-                    spdlog::warn("user '{}' does not exist", username);
-                    sendFailReply(minidrive::error::USER_NOT_FOUND.code(), username);
-                }
-                
-            }
-            else { // incorrect (not public nor private)
-                spdlog::warn("uknown mode: '{}'", mode);
-                sendFailReply(minidrive::error::MISSING_ARGUMENT, "mode must be 'public' or 'private'");
-                return;
-            }
-        }
-        else if (cmd == "REGISTER") {
-            if (!args.contains("username")) {
-                spdlog::warn("request does not contain 'username'");
-                sendFailReply(minidrive::error::MISSING_ARGUMENT, "username");
-                return;
-            }
-            if (!args.contains("password")) {
-                spdlog::warn("request does not contain 'password'");
-                sendFailReply(minidrive::error::MISSING_ARGUMENT, "password");
-                return;
-            }
-            const std::string &username = args["username"];
-            const std::string &password = args["password"];
-            if (_server->auth_userExists(username)) {
-                spdlog::warn("user '{}' already exists", username);
-                sendFailReply(minidrive::error::USER_ALREADY_EXISTS.code(), username);
-                return;
-            }
-            if (_server->auth_createUser(username, password)) {
-                spdlog::info("user 'username' was registered");
-                sendOkReply("user registered");
-            } else {
-                spdlog::warn("failed to register user 'username', password hashing failed (probably)");
-                sendFailReply(minidrive::error::USER_REGISTER.code(), "password hashing failed somehow :(");
-            }
-        }
+        if (cmd == "LIST") handleLIST(cmd, args, data);
+        else if (cmd == "REMOVE") handleREMOVE(cmd, args, data);
+        else if (cmd == "CD") handleCD(cmd, args, data);
+        else if (cmd == "MKDIR") handleMKDIR(cmd, args, data);
+        else if (cmd == "RMDIR") handleRMDIR(cmd, args, data);
+        else if (cmd == "AUTH") handleAUTH(cmd, args, data);
+        else if (cmd == "REGISTER") handleREGISTER(cmd, args, data);
         else {
             spdlog::error("unknown command: {}", cmd);
             sendFailReply(minidrive::error::UNKNOWN_COMMAND.code(), cmd);
@@ -203,8 +114,8 @@ void Session::handleMessage(const std::string &cmd, const json &data) {
 }
 
 
-json Session::makeOkReply(const std::string &msg) {
-    json reply = { {"status", "OK"}, {"code", minidrive::error::SUCCESS.code()}, {"message", msg} };
+json Session::makeOkReply(const std::string &msg, const json &data) {
+    json reply = { {"status", "OK"}, {"code", minidrive::error::SUCCESS.code()}, {"message", msg}, {"data", data}, {"uwd", _uwd.string()}};
     return reply;
 }
 
@@ -213,8 +124,8 @@ json Session::makeFailReply(uint32_t code, const std::string &msg) {
     return reply;
 }
 
-void Session::sendOkReply(const std::string &msg) {
-    _cmdSocket.sendMessage(makeOkReply(msg).dump());
+void Session::sendOkReply(const std::string &msg, const json &data) {
+    _cmdSocket.sendMessage(makeOkReply(msg, data).dump());
 }
 
 void Session::sendFailReply(uint32_t code, const std::string &msg) {

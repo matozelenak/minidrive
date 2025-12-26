@@ -6,11 +6,14 @@
 #include <functional>
 #include <filesystem>
 #include <spdlog/spdlog.h>
+#include <nlohmann/json.hpp>
 #include "session.hpp"
 #include "globals.hpp"
+#include "fs_module.hpp"
 
 using asio::ip::tcp;
 namespace fs = std::filesystem;
+using json = nlohmann::json;
 
 MiniDriveServer::MiniDriveServer(asio::io_context &io, uint16_t port)
     : _port(port), _io(io), _acceptor(io/*, tcp::endpoint(tcp::v4(), port)*/),
@@ -102,6 +105,87 @@ void MiniDriveServer::accept() {
 
         accept();
     });
+}
+
+
+std::pair<fs::path, bool> MiniDriveServer::fs_resolvePath(Session *session, std::string other) {
+    std::pair<fs::path, bool> result;
+    fs::path startPath, uwd;
+    if (session->getMode() == Session::mode::PUBLIC) {
+        startPath = PUBLIC_DIR_PATH;
+    } else if (session->getMode() == Session::mode::PRIVATE) {
+        startPath = USERDATA_DIR_PATH / session->getUsername();
+        uwd = session->getUWD();
+    }
+    else {
+        spdlog::warn("NOT_AUTHENTICATED session tried to resolve a path");
+        return result;
+    }
+    result.first = ::fs_resolvePath(startPath, uwd, other);
+    result.second = ::fs_validatePath(startPath, result.first);
+    return result;
+}
+
+json MiniDriveServer::fs_listFiles(fs::path path, bool includeHash) {
+    json result = json::array();
+    std::error_code ec;
+    for (const auto &entry : fs::directory_iterator(path, ec)) {
+        try {
+            auto status = entry.status();
+            json file;
+            file["name"] = entry.path();
+            file["type"] = status.type();
+            file["size"] = (status.type() == fs::file_type::regular ? entry.file_size() : 0);
+            result.push_back(file);
+        } catch (const fs::filesystem_error &e) {
+            spdlog::error("listFiles(): {}", e.what());
+        }
+    }
+    if (ec) {
+        spdlog::error("listFiles(): {}", ec.message());
+    }
+    return result;
+}
+
+bool MiniDriveServer::fs_createDir(fs::path path, bool createParent) {
+    try {
+        createParent ? fs::create_directories(path) : fs::create_directory(path);
+    } catch (const fs::filesystem_error &e) {
+        return false;
+    }
+    return true;
+}
+
+bool MiniDriveServer::fs_removeDir(fs::path path) {
+    try {
+        fs::remove_all(path);
+    } catch (const fs::filesystem_error &e) {
+        return false;
+    }
+    return true;
+}
+
+bool MiniDriveServer::fs_exists(fs::path path) {
+    return fs::exists(path);
+}
+
+bool MiniDriveServer::fs_remove(fs::path path) {
+    try {
+        fs::remove(path);
+    } catch (const fs::filesystem_error &e) {
+        return false;
+    }
+    return true;
+}
+
+fs::file_type MiniDriveServer::fs_getFileType(fs::path path) {
+    try {
+        auto status = fs::status(path);
+        return status.type();
+    } catch (const fs::filesystem_error &e) {
+        
+    }
+    return fs::file_type::none;
 }
 
 

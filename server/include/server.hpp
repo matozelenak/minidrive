@@ -4,6 +4,8 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <utility>
+#include <nlohmann/json.hpp>
 #include "auth.hpp"
 #include "session.hpp"
 
@@ -19,6 +21,14 @@ public:
     inline bool auth_userExists(const std::string &username) const {return _authModule.userExists(username);}
     inline bool auth_verifyPassword(const std::string &username, const std::string &password) const {return _authModule.verifyPassword(username, password);}
     inline bool auth_createUser(const std::string &username, const std::string &password) {return _authModule.createUser(username, password);}
+
+    std::pair<std::filesystem::path, bool> fs_resolvePath(Session *session, std::string other);
+    nlohmann::json fs_listFiles(std::filesystem::path path, bool includeHash = false);
+    bool fs_createDir(std::filesystem::path path, bool createParent = true);
+    bool fs_removeDir(std::filesystem::path path);
+    bool fs_exists(std::filesystem::path path);
+    bool fs_remove(std::filesystem::path path);
+    std::filesystem::file_type fs_getFileType(std::filesystem::path path);
 
 private:
     void _addSession(std::unique_ptr<Session> session);
