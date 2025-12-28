@@ -199,12 +199,12 @@ void Session::handleAUTH(const std::string &cmd, const json &args, const json &d
         sendFailReply(minidrive::error::ALREADY_AUTHENTICATED.code(), "");
         return;
     }
-    if (!data.contains("mode")) { // check if request contains 'mode' argument
+    if (!args.contains("mode")) { // check if request contains 'mode' argument
         spdlog::warn("request does not contain 'mode'");
         sendFailReply(minidrive::error::MISSING_ARGUMENT.code(), "mode");
         return;
     }
-    const std::string &mode = data["mode"];
+    const std::string &mode = args["mode"];
     // public mode
     if (mode == "public") {
         if (!_server->fs_createDir(PUBLIC_DIR_PATH)) {

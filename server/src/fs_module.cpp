@@ -42,7 +42,7 @@ json fs_listFiles(fs::path path, bool includeHash) {
     json result = json::array();
     for (const auto &entry : fs::directory_iterator(path)) {
         json file;
-        file["name"] = entry.path();
+        file["name"] = entry.path().filename();
         file["size"] = entry.file_size();
         file["type"] = entry.status().type();
         result.push_back(file);

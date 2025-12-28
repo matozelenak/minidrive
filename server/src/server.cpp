@@ -133,7 +133,7 @@ json MiniDriveServer::fs_listFiles(fs::path path, bool includeHash) {
         try {
             auto status = entry.status();
             json file;
-            file["name"] = entry.path();
+            file["name"] = entry.path().filename();
             file["type"] = status.type();
             file["size"] = (status.type() == fs::file_type::regular ? entry.file_size() : 0);
             result.push_back(file);

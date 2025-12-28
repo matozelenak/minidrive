@@ -1,5 +1,6 @@
 add_executable(minidrive_client
     src/main.cpp
+    src/client.cpp
 )
 
 target_include_directories(minidrive_client

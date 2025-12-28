@@ -18,23 +18,25 @@ private:
 };
 
 namespace error {
-    inline const error_code SUCCESS(0, "success");
-    inline const error_code USER_NOT_FOUND(1000, "username not found");
-    inline const error_code INCORRECT_PASSWORD(1001, "incorrect password");
-    inline const error_code USER_ALREADY_EXISTS(1002, "username already exists");
-    inline const error_code USER_REGISTER(1003, "could not register user");
-    inline const error_code ALREADY_AUTHENTICATED(1004, "already authenticated");
+    extern const error_code UNKNOWN;
+    extern const error_code SUCCESS;
+    extern const error_code USER_NOT_FOUND;
+    extern const error_code INCORRECT_PASSWORD;
+    extern const error_code USER_ALREADY_EXISTS;
+    extern const error_code USER_REGISTER;
+    extern const error_code ALREADY_AUTHENTICATED;
 
-    inline const error_code JSON_TYPE_ERROR(1100, "json type error");
-    inline const error_code UNKNOWN_COMMAND(1101, "uknown command");
-    inline const error_code MISSING_ARGUMENT(1102, "missing argument");
-    inline const error_code JSON_PARSE_ERROR(1103, "json parse error");
+    extern const error_code JSON_TYPE_ERROR;
+    extern const error_code UNKNOWN_COMMAND;
+    extern const error_code MISSING_ARGUMENT;
+    extern const error_code JSON_PARSE_ERROR;
     
-    inline const error_code ACCESS_DENIED(1200, "access denied");
-    inline const error_code TARGET_NOT_FOUND(1201, "target does not exist");
-    inline const error_code FS_ERROR(1202, "filesystem error");
-    inline const error_code TARGET_ALREADY_EXISTS(1203, "target already exists");
-    
+    extern const error_code ACCESS_DENIED;
+    extern const error_code TARGET_NOT_FOUND;
+    extern const error_code FS_ERROR;
+    extern const error_code TARGET_ALREADY_EXISTS;
 }
+
+const error_code* getErrorByCode(uint32_t code);
 
 } // namespace minidrive
