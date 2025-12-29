@@ -22,6 +22,9 @@ Session::Session(MiniDriveServer *server, tcp::socket &&cmdSocket)
 
 Session::~Session() {
     spdlog::debug("~Session()");
+    if (_transfer.active) { // save
+        saveTransfer();
+    }
 }
 
 bool Session::isDead() const {
@@ -38,8 +41,13 @@ void Session::start() {
                 spdlog::debug("IP: {}, port: {}, msg type: {}, payload length: {}", endpoint.address().to_string(),
                     endpoint.port(), static_cast<uint32_t>(type), payload->size());
                 processMessage(*payload);
-            }
                 break;
+            }
+            case data_type::DATA:
+            {
+                processData(*payload);
+                break;
+            }
             default:
                 break;
             }
@@ -102,6 +110,7 @@ void Session::processMessage(const MsgPayload &payload) {
         else if (cmd == "RMDIR") handleRMDIR(cmd, args, data);
         else if (cmd == "AUTH") handleAUTH(cmd, args, data);
         else if (cmd == "REGISTER") handleREGISTER(cmd, args, data);
+        else if (cmd == "UPLOAD") handleUPLOAD(cmd, args, data);
         else {
             spdlog::error("unknown command: {}", cmd);
             sendFailReply(minidrive::error::UNKNOWN_COMMAND.code(), cmd);
@@ -113,6 +122,86 @@ void Session::processMessage(const MsgPayload &payload) {
     }
 }
 
+void Session::processData(const MsgPayload &payload) {
+    if (!_transfer.active) {
+        spdlog::error("received data but there are no active transfers");
+        return;
+    }
+    _transfer.stream.write(reinterpret_cast<const char*>(payload.data()), payload.size()); // TODO handle errors
+    _transfer.sequenceNum += payload.size();
+
+    if (_transfer.sequenceNum > _transfer.size) {
+        spdlog::error("for some reason this happened, {} > {}", _transfer.sequenceNum, _transfer.size);
+    }
+
+    if (_transfer.sequenceNum == _transfer.size) {
+        // finished
+        _transfer.active = false;
+        _transfer.stream.flush();
+        _transfer.stream.close();
+        fs::rename(_transfer.resolvedPathTmp, _transfer.resolvedPath); // TODO handle errors
+        deleteTransferFile();
+        spdlog::info("transfer finished");
+    }
+    sendOkReply("", { {"seq", _transfer.sequenceNum}, {"chunk_size", _transfer.chunkSize} });
+}
+
+
+
+void Session::saveTransfer() {
+    std::fstream out(USERDATA_DIR_PATH / _transfer.jsonFilename, std::ios_base::out);
+    json j;
+    j["command"] = _transfer.command;
+    j["resolvedPath"] = _transfer.resolvedPath.string();
+    j["resolvedPathTmp"] = _transfer.resolvedPathTmp.string();
+    j["size"] = _transfer.size;
+    j["chunkSize"] = _transfer.chunkSize;
+    j["sequenceNum"] = _transfer.sequenceNum;
+    
+    out << j.dump();
+    if (out.fail()) {
+        spdlog::error("failed to save transfer file for user '{}'", _username);
+    } else {
+        spdlog::info("transfer file for user '{}' saved", _username);
+    }
+    out.close();
+}
+
+bool Session::loadTransfer() {
+    std::fstream in(USERDATA_DIR_PATH / _transfer.jsonFilename, std::ios_base::in);
+    if (in.fail()) {
+        spdlog::info("no transfer file for user '{}'", _username);
+        return false;
+    }
+    json j;
+    try {
+        json j = json::parse(in);
+    } catch (const json::parse_error &e) {
+        spdlog::error("failed to parse transfer file for user '{}', {}", _username, e.what());
+        return false;
+    }
+    try {
+        if (j.contains("command")) _transfer.command = j["command"];
+        if (j.contains("resolvedPath")) _transfer.resolvedPath = j["resolvedPath"].get<std::string>();
+        if (j.contains("resolvedPathTmp")) _transfer.resolvedPathTmp = j["resolvedPathTmp"].get<std::string>();
+        if (j.contains("size")) _transfer.size = j["size"];
+        if (j.contains("chunkSize")) _transfer.chunkSize = j["chunkSize"];
+        if (j.contains("sequenceNum")) _transfer.sequenceNum = j["sequenceNum"];
+    } catch (const json::type_error &e) {
+        spdlog::error("type error: user '{}', {}", _username, e.what());
+        return false;
+    }
+    spdlog::info("transfer file for user '{}' loaded", _username);
+    return true;
+}
+
+void Session::deleteTransferFile() {
+    try {
+        fs::remove(USERDATA_DIR_PATH / _transfer.jsonFilename);
+    } catch (const fs::filesystem_error &e) {
+        spdlog::error("failed to remove transfer file: {}", e.what());
+    }
+}
 
 json Session::makeOkReply(const std::string &msg, const json &data) {
     json reply = { {"status", "OK"}, {"code", minidrive::error::SUCCESS.code()}, {"message", msg}, {"data", data}, {"uwd", _uwd.string()}};

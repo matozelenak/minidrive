@@ -127,24 +127,7 @@ std::pair<fs::path, bool> MiniDriveServer::fs_resolvePath(Session *session, std:
 }
 
 json MiniDriveServer::fs_listFiles(fs::path path, bool includeHash) {
-    json result = json::array();
-    std::error_code ec;
-    for (const auto &entry : fs::directory_iterator(path, ec)) {
-        try {
-            auto status = entry.status();
-            json file;
-            file["name"] = entry.path().filename();
-            file["type"] = status.type();
-            file["size"] = (status.type() == fs::file_type::regular ? entry.file_size() : 0);
-            result.push_back(file);
-        } catch (const fs::filesystem_error &e) {
-            spdlog::error("listFiles(): {}", e.what());
-        }
-    }
-    if (ec) {
-        spdlog::error("listFiles(): {}", ec.message());
-    }
-    return result;
+    return ::fs_listFiles(path, includeHash);
 }
 
 bool MiniDriveServer::fs_createDir(fs::path path, bool createParent) {

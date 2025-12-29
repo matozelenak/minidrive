@@ -40,12 +40,21 @@ fs::path fs_resolvePath(fs::path startPath, fs::path uwd, fs::path other) {
 
 json fs_listFiles(fs::path path, bool includeHash) {
     json result = json::array();
-    for (const auto &entry : fs::directory_iterator(path)) {
-        json file;
-        file["name"] = entry.path().filename();
-        file["size"] = entry.file_size();
-        file["type"] = entry.status().type();
-        result.push_back(file);
+    std::error_code ec;
+    for (const auto &entry : fs::directory_iterator(path, ec)) {
+        try {
+            auto status = entry.status();
+            json file;
+            file["name"] = entry.path().filename();
+            file["type"] = status.type();
+            file["size"] = (status.type() == fs::file_type::regular ? entry.file_size() : 0);
+            result.push_back(file);
+        } catch (const fs::filesystem_error &e) {
+            spdlog::error("listFiles(): {}", e.what());
+        }
+    }
+    if (ec) {
+        spdlog::error("listFiles(): {}", ec.message());
     }
     return result;
 }

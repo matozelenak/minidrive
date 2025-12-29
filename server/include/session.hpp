@@ -4,8 +4,10 @@
 #include <queue>
 #include <mutex>
 #include <filesystem>
+#include <fstream>
 #include <nlohmann/json.hpp>
 #include "minidrive/async_socket.hpp"
+#include "minidrive/transfer.hpp"
 // #include "server.hpp"
 
 class MiniDriveServer;
@@ -18,7 +20,7 @@ public:
     void start();
     
     void processMessage(const MsgPayload &payload);
-    // void handleMessage(const std::string &cmd, const nlohmann::json &data);
+    void processData(const MsgPayload &payload);
     
     void handleLIST(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
     void handleREMOVE(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
@@ -27,6 +29,13 @@ public:
     void handleRMDIR(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
     void handleAUTH(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
     void handleREGISTER(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
+
+    void handleUPLOAD(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
+
+    void saveTransfer();
+    bool loadTransfer();
+    void deleteTransferFile();
+
     
 
     nlohmann::json makeOkReply(const std::string &msg, const nlohmann::json &data = nlohmann::json::object());
@@ -48,4 +57,6 @@ private:
 
     MiniDriveServer *_server;
     AsyncSocket _cmdSocket;
+
+    Transfer _transfer;
 };

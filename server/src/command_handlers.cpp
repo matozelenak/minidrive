@@ -285,3 +285,65 @@ void Session::handleREGISTER(const std::string &cmd, const json &args, const jso
         sendFailReply(minidrive::error::USER_REGISTER.code(), "password hashing failed somehow :(");
     }
 }
+
+
+void Session::handleUPLOAD(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data) {
+    if (!args.contains("src")) {
+        spdlog::warn("request does not contain 'src'");
+        sendFailReply(minidrive::error::MISSING_ARGUMENT.code(), "src");
+        return;
+    }
+    if (!args.contains("size")) {
+        spdlog::warn("request does not contain 'size'");
+        sendFailReply(minidrive::error::MISSING_ARGUMENT.code(), "size");
+        return;
+    }
+    std::string src = args["src"];
+    std::string dst;
+    if (args.contains("dst")) {
+        dst = args["dst"];
+    }
+    
+    auto[result, valid] = _server->fs_resolvePath(this, dst);
+    if (!valid) {
+        spdlog::warn("access denied: {}", result.string());
+        sendFailReply(minidrive::error::ACCESS_DENIED.code(), result.string());
+        return;
+    }
+    if (_server->fs_exists(result)) {
+        fs::file_type type = _server->fs_getFileType(result);
+        if (type == fs::file_type::directory) {
+            result /= fs::path(src).filename();
+            if (_server->fs_exists(result)) {
+                spdlog::warn("target already exists: {}", result.string());
+                sendFailReply(minidrive::error::TARGET_ALREADY_EXISTS.code(), result.string());
+                return;
+            } // otherwise its good
+        } else if (type != fs::file_type::none) {
+            spdlog::warn("target already exists: {}", result.string());
+            sendFailReply(minidrive::error::TARGET_ALREADY_EXISTS.code(), result.string());
+            return;
+        }
+    }
+
+    
+    _transfer.jsonFilename = "transfer." + _username + ".json";
+    _transfer.command = data;
+    _transfer.size = args["size"];
+    _transfer.sequenceNum = 0;
+    _transfer.chunkSize = 100; // TODO increase
+    _transfer.resolvedPath = result;
+    _transfer.resolvedPathTmp = result;
+    _transfer.resolvedPathTmp.replace_extension(result.extension().string() + ".part");
+    
+    std::fstream stream(_transfer.resolvedPathTmp, std::ios_base::out | std::ios_base::binary);
+    if (stream.fail()) {
+        spdlog::error("failed to create upload stream");
+        sendFailReply(minidrive::error::FS_ERROR.code(), "failed to create upload stream");
+        return;
+    }
+    _transfer.stream = std::move(stream);
+    _transfer.active = true;
+
+    sendOkReply("", { {"seq", _transfer.sequenceNum}, {"chunk_size", _transfer.chunkSize} });
+}

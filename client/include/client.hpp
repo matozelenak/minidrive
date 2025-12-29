@@ -9,6 +9,7 @@
 
 #include "args.hpp"
 #include "minidrive/async_socket.hpp"
+#include "minidrive/transfer.hpp"
 
 class Client {
 public:
@@ -18,9 +19,15 @@ public:
     void stop();
     void processMessage(const MsgPayload &payload);
     void userThread();
+    void reactToReply();
+    void processUserInput();
+    void processCommands();
     void sendMessage(const std::string &cmd, nlohmann::json &&args);
+    void sendData(MsgPayload &&payload);
+    void printLIST(const nlohmann::json &files);
+    void printHelp();
 
-    enum class State {AUTH, REG, COMMAND};
+    enum class State {AUTH, REG, COMMAND, UPLOAD, DOWNLOAD};
 
 private:
     std::mutex _mutex;
@@ -35,4 +42,6 @@ private:
     AsyncSocket _client;
     std::thread _th;
     Args _args;
+
+    Transfer _transfer;
 };
