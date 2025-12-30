@@ -5,6 +5,8 @@
 #include <nlohmann/json.hpp>
 
 struct Transfer {
+    enum class Type {UPLOAD, DOWNLOAD};
+
     nlohmann::json command;
     std::filesystem::path resolvedPath;
     std::filesystem::path resolvedPathTmp;
@@ -14,4 +16,5 @@ struct Transfer {
     bool active;
     std::fstream stream;
     std::string jsonFilename;
+    Type type;
 };

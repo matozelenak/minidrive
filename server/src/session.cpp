@@ -16,7 +16,7 @@ using nlohmann::json;
 namespace fs = std::filesystem;
 
 Session::Session(MiniDriveServer *server, tcp::socket &&cmdSocket)
-    :  _server(server), _cmdSocket(std::move(cmdSocket)), _mode(mode::NOT_AUTHENTICATED) {
+    :  _server(server), _cmdSocket(std::move(cmdSocket)), _mode(mode::NOT_AUTHENTICATED), _uwd(".") {
     
 }
 
@@ -103,14 +103,15 @@ void Session::processMessage(const MsgPayload &payload) {
 
     try {
         spdlog::info("command: {}", cmd);
-        if (cmd == "LIST") handleLIST(cmd, args, data);
-        else if (cmd == "REMOVE") handleREMOVE(cmd, args, data);
-        else if (cmd == "CD") handleCD(cmd, args, data);
-        else if (cmd == "MKDIR") handleMKDIR(cmd, args, data);
-        else if (cmd == "RMDIR") handleRMDIR(cmd, args, data);
-        else if (cmd == "AUTH") handleAUTH(cmd, args, data);
-        else if (cmd == "REGISTER") handleREGISTER(cmd, args, data);
-        else if (cmd == "UPLOAD") handleUPLOAD(cmd, args, data);
+        if (cmd == "LIST") handleLIST(args);
+        else if (cmd == "REMOVE") handleREMOVE(args);
+        else if (cmd == "CD") handleCD(args);
+        else if (cmd == "MKDIR") handleMKDIR(args);
+        else if (cmd == "RMDIR") handleRMDIR(args);
+        else if (cmd == "AUTH") handleAUTH(args);
+        else if (cmd == "REGISTER") handleREGISTER(args);
+        else if (cmd == "UPLOAD") handleUPLOAD(args, data);
+        else if (cmd == "DOWNLOAD") handleDOWNLOAD(args, data);
         else {
             spdlog::error("unknown command: {}", cmd);
             sendFailReply(minidrive::error::UNKNOWN_COMMAND.code(), cmd);
@@ -123,12 +124,13 @@ void Session::processMessage(const MsgPayload &payload) {
 }
 
 void Session::processData(const MsgPayload &payload) {
-    if (!_transfer.active) {
-        spdlog::error("received data but there are no active transfers");
+    if (!_transfer.active || _transfer.type != Transfer::Type::UPLOAD) {
+        spdlog::error("received file data but there are no active uploads");
         return;
     }
     _transfer.stream.write(reinterpret_cast<const char*>(payload.data()), payload.size()); // TODO handle errors
     _transfer.sequenceNum += payload.size();
+    spdlog::debug("written {} Bytes, seq: {}", payload.size(), _transfer.sequenceNum);
 
     if (_transfer.sequenceNum > _transfer.size) {
         spdlog::error("for some reason this happened, {} > {}", _transfer.sequenceNum, _transfer.size);
@@ -151,6 +153,7 @@ void Session::processData(const MsgPayload &payload) {
 void Session::saveTransfer() {
     std::fstream out(USERDATA_DIR_PATH / _transfer.jsonFilename, std::ios_base::out);
     json j;
+    j["type"] = static_cast<int32_t>(_transfer.type);
     j["command"] = _transfer.command;
     j["resolvedPath"] = _transfer.resolvedPath.string();
     j["resolvedPathTmp"] = _transfer.resolvedPathTmp.string();
@@ -181,6 +184,7 @@ bool Session::loadTransfer() {
         return false;
     }
     try {
+        if (j.contains("type")) _transfer.type = static_cast<Transfer::Type>(j["type"]);
         if (j.contains("command")) _transfer.command = j["command"];
         if (j.contains("resolvedPath")) _transfer.resolvedPath = j["resolvedPath"].get<std::string>();
         if (j.contains("resolvedPathTmp")) _transfer.resolvedPathTmp = j["resolvedPathTmp"].get<std::string>();

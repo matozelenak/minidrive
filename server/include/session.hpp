@@ -22,15 +22,16 @@ public:
     void processMessage(const MsgPayload &payload);
     void processData(const MsgPayload &payload);
     
-    void handleLIST(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
-    void handleREMOVE(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
-    void handleCD(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
-    void handleMKDIR(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
-    void handleRMDIR(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
-    void handleAUTH(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
-    void handleREGISTER(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
+    void handleLIST(const nlohmann::json &args);
+    void handleREMOVE(const nlohmann::json &args);
+    void handleCD(const nlohmann::json &args);
+    void handleMKDIR(const nlohmann::json &args);
+    void handleRMDIR(const nlohmann::json &args);
+    void handleAUTH(const nlohmann::json &args);
+    void handleREGISTER(const nlohmann::json &args);
 
-    void handleUPLOAD(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data);
+    void handleUPLOAD(const nlohmann::json &args, const nlohmann::json &data);
+    void handleDOWNLOAD(const nlohmann::json &args, const nlohmann::json &data);
 
     void saveTransfer();
     bool loadTransfer();

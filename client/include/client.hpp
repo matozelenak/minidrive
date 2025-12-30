@@ -18,6 +18,7 @@ public:
     void run();
     void stop();
     void processMessage(const MsgPayload &payload);
+    void processData(const MsgPayload &payload);
     void userThread();
     void reactToReply();
     void processUserInput();
@@ -27,7 +28,7 @@ public:
     void printLIST(const nlohmann::json &files);
     void printHelp();
 
-    enum class State {AUTH, REG, COMMAND, UPLOAD, DOWNLOAD};
+    enum class State {AUTH, REG, COMMAND, UPLOAD, DOWNLOAD, DOWNLOADING};
 
 private:
     std::mutex _mutex;

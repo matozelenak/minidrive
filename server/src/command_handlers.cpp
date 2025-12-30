@@ -13,7 +13,7 @@ using asio::ip::tcp;
 using nlohmann::json;
 namespace fs = std::filesystem;
 
-void Session::handleLIST(const std::string &cmd, const json &args, const json &data) {
+void Session::handleLIST(const json &args) {
     if (_mode == mode::NOT_AUTHENTICATED) {
         spdlog::warn("session is not authenticated");
         sendFailReply(minidrive::error::ACCESS_DENIED.code(), "not authenticated");
@@ -41,7 +41,7 @@ void Session::handleLIST(const std::string &cmd, const json &args, const json &d
     sendOkReply(result.string(), replyData);
 }
 
-void Session::handleREMOVE(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data) {
+void Session::handleREMOVE(const json &args) {
     if (_mode == mode::NOT_AUTHENTICATED) {
         spdlog::warn("session is not authenticated");
         sendFailReply(minidrive::error::ACCESS_DENIED.code(), "not authenticated");
@@ -79,7 +79,7 @@ void Session::handleREMOVE(const std::string &cmd, const nlohmann::json &args, c
     sendOkReply("file removed");
 }
 
-void Session::handleCD(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data) {
+void Session::handleCD(const json &args) {
     if (_mode == mode::NOT_AUTHENTICATED) {
         spdlog::warn("session is not authenticated");
         sendFailReply(minidrive::error::ACCESS_DENIED.code(), "not authenticated");
@@ -110,7 +110,7 @@ void Session::handleCD(const std::string &cmd, const nlohmann::json &args, const
     }
 
     try {
-        _uwd = fs::relative(result, USERDATA_DIR_PATH / _username);
+        _uwd = fs::relative(result, (_mode == mode::PRIVATE ? USERDATA_DIR_PATH / _username : PUBLIC_DIR_PATH));
         spdlog::info("changed UWD: {}", _uwd.string());
         sendOkReply("");
     } catch (const fs::filesystem_error &e) {
@@ -119,7 +119,7 @@ void Session::handleCD(const std::string &cmd, const nlohmann::json &args, const
     }
 }
 
-void Session::handleMKDIR(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data) {
+void Session::handleMKDIR(const json &args) {
     if (_mode == mode::NOT_AUTHENTICATED) {
         spdlog::warn("session is not authenticated");
         sendFailReply(minidrive::error::ACCESS_DENIED.code(), "not authenticated");
@@ -152,7 +152,7 @@ void Session::handleMKDIR(const std::string &cmd, const nlohmann::json &args, co
     sendOkReply("");
 }
 
-void Session::handleRMDIR(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data) {
+void Session::handleRMDIR(const json &args) {
     if (_mode == mode::NOT_AUTHENTICATED) {
         spdlog::warn("session is not authenticated");
         sendFailReply(minidrive::error::ACCESS_DENIED.code(), "not authenticated");
@@ -192,7 +192,7 @@ void Session::handleRMDIR(const std::string &cmd, const nlohmann::json &args, co
 }
 
 
-void Session::handleAUTH(const std::string &cmd, const json &args, const json &data) {
+void Session::handleAUTH(const json &args) {
     // TODO error if already authenticated
     if (_mode != mode::NOT_AUTHENTICATED) {
         spdlog::warn("session already authenticated");
@@ -259,7 +259,7 @@ void Session::handleAUTH(const std::string &cmd, const json &args, const json &d
     }
 }
 
-void Session::handleREGISTER(const std::string &cmd, const json &args, const json &data) {
+void Session::handleREGISTER(const json &args) {
     if (!args.contains("username")) {
         spdlog::warn("request does not contain 'username'");
         sendFailReply(minidrive::error::MISSING_ARGUMENT, "username");
@@ -287,7 +287,7 @@ void Session::handleREGISTER(const std::string &cmd, const json &args, const jso
 }
 
 
-void Session::handleUPLOAD(const std::string &cmd, const nlohmann::json &args, const nlohmann::json &data) {
+void Session::handleUPLOAD(const json &args, const json &data) {
     if (!args.contains("src")) {
         spdlog::warn("request does not contain 'src'");
         sendFailReply(minidrive::error::MISSING_ARGUMENT.code(), "src");
@@ -327,6 +327,7 @@ void Session::handleUPLOAD(const std::string &cmd, const nlohmann::json &args, c
     }
 
     
+    _transfer.type = Transfer::Type::UPLOAD;
     _transfer.jsonFilename = "transfer." + _username + ".json";
     _transfer.command = data;
     _transfer.size = args["size"];
@@ -346,4 +347,89 @@ void Session::handleUPLOAD(const std::string &cmd, const nlohmann::json &args, c
     _transfer.active = true;
 
     sendOkReply("", { {"seq", _transfer.sequenceNum}, {"chunk_size", _transfer.chunkSize} });
+}
+
+void Session::handleDOWNLOAD(const json &args, const json &data) {
+    if (data.contains("seq") && data["seq"].is_number()) {
+        // send file chunk
+        if (!_transfer.active || _transfer.type != Transfer::Type::DOWNLOAD) {
+            spdlog::error("received file chunk request but there is no active download");
+            return;
+        }
+        _transfer.sequenceNum = data["seq"];
+
+        if (_transfer.sequenceNum > _transfer.size) {
+            spdlog::error("for some reason this happened, {} > {}", _transfer.sequenceNum, _transfer.size);
+        }
+
+        if (_transfer.sequenceNum == _transfer.size) {
+            // finished
+            _transfer.active = false;
+            _transfer.stream.close();
+            deleteTransferFile();
+            spdlog::info("transfer finished");
+            return;
+        }
+
+        _transfer.stream.seekg(_transfer.sequenceNum);
+        uintmax_t actualSize = std::min(_transfer.chunkSize, _transfer.size - _transfer.sequenceNum);
+        MsgPayload payload(actualSize);
+        _transfer.stream.read(reinterpret_cast<char *>(payload.data()), payload.size()); // TODO handle errors
+        spdlog::debug("sending {} Bytes, seq: {}", actualSize, _transfer.sequenceNum);
+        _cmdSocket.sendMessage(data_type::DATA, std::move(payload));
+        return;
+    }
+
+
+    if (!args.contains("src")) {
+        spdlog::warn("request does not contain 'src'");
+        sendFailReply(minidrive::error::MISSING_ARGUMENT.code(), "src");
+        return;
+    }
+    std::string src = args["src"];
+    auto[result, valid] = _server->fs_resolvePath(this, src);
+    if (!valid) {
+        spdlog::warn("access denied: {}", result.string());
+        sendFailReply(minidrive::error::ACCESS_DENIED.code(), result.string());
+        return;
+    }
+    if (!_server->fs_exists(result)) {
+        spdlog::warn("target does not exist: {}", result.string());
+        sendFailReply(minidrive::error::TARGET_NOT_FOUND.code(), result.string());
+        return;
+    }
+    auto type = _server->fs_getFileType(result);
+    if (type != fs::file_type::regular) {
+        spdlog::warn("target is not a regular file: {}", result.string());
+        sendFailReply(minidrive::error::FS_ERROR.code(), std::string("target is not a regular file: ") + result.string());
+        return;
+    }
+    uintmax_t size = 0;
+    try {
+        size = fs::file_size(result);
+    } catch (const fs::filesystem_error &e) {
+        spdlog::error("failed to get file size: {}", e.what());
+        sendFailReply(minidrive::error::FS_ERROR.code(), "failed to get file size");
+        return;
+    }
+
+    _transfer.type = Transfer::Type::DOWNLOAD;
+    _transfer.jsonFilename = "transfer." + _username + ".json";
+    _transfer.command = data;
+    _transfer.size = size;
+    _transfer.sequenceNum = 0;
+    _transfer.chunkSize = 100; // TODO increase
+    _transfer.resolvedPath = result;
+    _transfer.resolvedPathTmp = "";
+    
+    std::fstream stream(_transfer.resolvedPath, std::ios_base::in | std::ios_base::binary);
+    if (stream.fail()) {
+        spdlog::error("failed to create download stream");
+        sendFailReply(minidrive::error::FS_ERROR.code(), "failed to create download stream");
+        return;
+    }
+    _transfer.stream = std::move(stream);
+    _transfer.active = true;
+
+    sendOkReply("", { {"seq", _transfer.sequenceNum}, {"chunk_size", _transfer.chunkSize}, {"size", _transfer.size} });
 }

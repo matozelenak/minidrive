@@ -110,18 +110,17 @@ void MiniDriveServer::accept() {
 
 std::pair<fs::path, bool> MiniDriveServer::fs_resolvePath(Session *session, std::string other) {
     std::pair<fs::path, bool> result;
-    fs::path startPath, uwd;
+    fs::path startPath;
     if (session->getMode() == Session::mode::PUBLIC) {
         startPath = PUBLIC_DIR_PATH;
     } else if (session->getMode() == Session::mode::PRIVATE) {
         startPath = USERDATA_DIR_PATH / session->getUsername();
-        uwd = session->getUWD();
     }
     else {
         spdlog::warn("NOT_AUTHENTICATED session tried to resolve a path");
         return result;
     }
-    result.first = ::fs_resolvePath(startPath, uwd, other);
+    result.first = ::fs_resolvePath(startPath, session->getUWD(), other);
     result.second = ::fs_validatePath(startPath, result.first);
     return result;
 }

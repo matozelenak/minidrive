@@ -27,14 +27,27 @@ void Client::run() {
     _running = true;
     _client.start(
         [this](data_type type, std::shared_ptr<MsgPayload> payload) {
+            std::lock_guard lock(_mutex);
+            if (!_waitForReply) {
+                spdlog::warn("unwanted message arrived");
+                return;
+            }
+            _replyArrived = true;
+            _waitForReply = false;
+
             switch(type) {
             case data_type::COMMAND:
                 spdlog::debug("msg type: {}, payload length: {}", static_cast<uint32_t>(type), payload->size());
                 processMessage(*payload);
                 break;
+            case data_type::DATA:
+                processData(*payload);
+                break;
             default:
                 break;
             }
+
+            _cv.notify_one();
         },
         [this](const asio::error_code &ec) {
             if (ec == asio::error::eof) {
@@ -88,17 +101,32 @@ void Client::processMessage(const MsgPayload &payload) {
     }
     
     spdlog::debug("msg: '{}'", data.dump());
+    _lastReply = std::move(data);
+}
 
-    std::lock_guard lock(_mutex);
-    if (!_waitForReply) {
-        spdlog::warn("unwanted message arrived");
+void Client::processData(const MsgPayload &payload) {
+    if (!_transfer.active || _transfer.type != Transfer::Type::DOWNLOAD) {
+        spdlog::error("received file data but there are no active downloads");
         return;
     }
+    _transfer.stream.write(reinterpret_cast<const char*>(payload.data()), payload.size()); // TODO handle errors
+    _transfer.sequenceNum += payload.size();
+    spdlog::debug("written {} Bytes, seq: {}", payload.size(), _transfer.sequenceNum);
 
-    _replyArrived = true;
-    _waitForReply = false;
-    _lastReply = std::move(data);
-    _cv.notify_one();
+    if (_transfer.sequenceNum > _transfer.size) {
+        spdlog::error("for some reason this happened, {} > {}", _transfer.sequenceNum, _transfer.size);
+    }
+
+    if (_transfer.sequenceNum == _transfer.size) {
+        // finished
+        _transfer.active = false;
+        _transfer.stream.flush();
+        _transfer.stream.close();
+        fs::rename(_transfer.resolvedPathTmp, _transfer.resolvedPath); // TODO handle errors
+        _client.sendMessage(json({ {"cmd", "DOWNLOAD"}, {"seq", _transfer.sequenceNum} }).dump()); // tell server the transfer is finished
+        _state = State::COMMAND;
+        spdlog::info("transfer finished");
+    }
 }
 
 
@@ -216,6 +244,41 @@ void Client::reactToReply() {
 
         break;
     }
+
+    case State::DOWNLOAD:
+    {
+        if (code != minidrive::error::SUCCESS.code()) {
+            std::cout << "ERROR: " << code << '\n';
+            std::cout << minidrive::getErrorByCode(code)->what() << '\n';
+            std::cout << "message: " << message << std::endl;
+            _transfer.stream.close();
+            _state = State::COMMAND;
+            break;
+        }
+        if (!data.contains("seq") || !data.contains("chunk_size") || !data.contains("size")) {
+            spdlog::error("reply did not contain required arguments");
+            _transfer.stream.close();
+            _state = State::COMMAND;
+            break;
+        }
+        _transfer.sequenceNum = data["seq"];
+        _transfer.chunkSize = data["chunk_size"];
+        _transfer.size = data["size"];
+        
+        _transfer.active = true;
+        _state = State::DOWNLOADING;
+        spdlog::info("download initiated");
+        _client.sendMessage(json({ {"cmd", "DOWNLOAD"}, {"seq", _transfer.sequenceNum} }).dump());
+        _waitForReply = true;
+        break;
+    }
+
+    case State::DOWNLOADING:
+    {
+        _client.sendMessage(json({ {"cmd", "DOWNLOAD"}, {"seq", _transfer.sequenceNum} }).dump());
+        _waitForReply = true;
+        break;
+    }
     }
 }
 
@@ -322,7 +385,7 @@ void Client::processCommands() {
         std::string src, dst;
         ss >> src >> dst;
         if (src.empty()) {
-            std::cout << "usage: UPLOAD <src> [dst]" << std::endl;
+            std::cout << "usage: UPLOAD <local_path> [remote_path]" << std::endl;
             return;
         }
         
@@ -350,6 +413,45 @@ void Client::processCommands() {
         _transfer.stream = std::move(stream);
         _state = State::UPLOAD;
         sendMessage("UPLOAD", { {"src", src}, {"dst", dst}, {"size", _transfer.size} });
+    }
+    else if (cmd == "DOWNLOAD") {
+        std::string src, dst;
+        ss >> src >> dst;
+        if (src.empty()) {
+            std::cout << "usage: DOWNLOAD <remote_path> [local_path]" << std::endl;
+            return;
+        }
+        if (dst.empty()) dst = ".";
+        fs::path result = dst;
+        
+        if (fs::exists(result)) {
+            fs::file_type type = fs::status(result).type();
+            if (type == fs::file_type::directory) {
+                result /= fs::path(src).filename();
+                if (fs::exists(result)) {
+                    std::cout << "error: file already exists" << std::endl;
+                    return;
+                } // otherwise its good
+            } else {
+                std::cout << "error: file already exists";
+                return;
+            }
+        }
+        
+        _transfer.type = Transfer::Type::DOWNLOAD;
+        _transfer.resolvedPath = result;
+        _transfer.resolvedPathTmp = result;
+        _transfer.resolvedPathTmp.replace_extension(result.extension().string() + ".part");
+        std::fstream stream(_transfer.resolvedPathTmp, std::ios_base::out | std::ios_base::binary);
+        if (stream.fail()) {
+            std::cout << "failed to create download stream" << std::endl;
+            _state = State::COMMAND;
+            return;
+        }
+        _transfer.stream = std::move(stream);
+        
+        _state = State::DOWNLOAD;
+        sendMessage("DOWNLOAD", { {"src", src}, {"dst", dst} });
     }
     else if (cmd == "EXIT") {
         stop();
@@ -386,6 +488,8 @@ void Client::printHelp() {
     std::cout << "CD <path>\n";
     std::cout << "MKDIR <path>\n";
     std::cout << "RMDIR <path>\n";
+    std::cout << "UPLOAD <local_path> [remote_path]\n";
+    std::cout << "DOWNLOAD <remote_path> [local_path]\n";
     std::cout << "EXIT\n";
     std::cout << "HELP\n";
     std::cout << std::endl;
