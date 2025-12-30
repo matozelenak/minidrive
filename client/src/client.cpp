@@ -19,8 +19,9 @@ using asio::ip::tcp;
 namespace fs = std::filesystem;
 
 Client::Client(asio::io_context &io, tcp::socket &&socket, Args &&args)
-    :_io(io), _client(std::move(socket)), _state(State::AUTH), _args(std::move(args)), _uwd(".") {
-
+    :_io(io), _client(std::move(socket)), _args(std::move(args)), _uwd(".") {
+    
+    _state = (_args.username.empty() ? State::AUTH : State::CHECK_USER);
 }
 
 void Client::run() {
@@ -155,6 +156,19 @@ void Client::reactToReply() {
     json data = (_lastReply.contains("data") ? _lastReply["data"] : json::object());
 
     switch (_state) {
+    case State::CHECK_USER:
+    {
+        if (code == minidrive::error::SUCCESS.code()) {
+            _state = State::AUTH;
+        } else if (code == minidrive::error::USER_NOT_FOUND.code()) {
+            spdlog::warn("user not found");
+            _state = State::REG;
+        } else {
+            stop();
+        }
+        break;
+    }
+
     case State::AUTH:
     {
         if (code == minidrive::error::SUCCESS.code()) {
@@ -165,9 +179,6 @@ void Client::reactToReply() {
             }
             spdlog::info("auth success");
             _state = State::COMMAND;
-        } else if (code == minidrive::error::USER_NOT_FOUND.code()) {
-            spdlog::warn("user not found");
-            _state = State::REG;
         } else if (code == minidrive::error::INCORRECT_PASSWORD.code()) {
             spdlog::info("incorrect password");
         } else {
@@ -179,11 +190,14 @@ void Client::reactToReply() {
     case State::REG:
     {
         if (code == minidrive::error::SUCCESS.code()) {
+            std::cout << "USER REGISTERED" << std::endl;
             spdlog::info("register success");
-            _state = State::COMMAND;
         } else {
-            stop();
+            std::cout << "ERROR: " << code << '\n';
+            std::cout << minidrive::getErrorByCode(code)->what() << '\n';
+            std::cout << "message: " << message << std::endl;
         }
+        stop();
         break;
     }
 
@@ -284,11 +298,17 @@ void Client::reactToReply() {
 
 void Client::processUserInput() {
     switch (_state) {
+    case State::CHECK_USER:
+    {
+        sendMessage("AUTH", {{"mode", "private"}, {"username", _args.username} });
+        break;
+    }
+
     case State::AUTH:
     {
         if (_args.username.empty()) { // public mode
             sendMessage("AUTH", {{"mode", "public"}});
-        } 
+        }
         else { // private mode
             std::cout << "authenticating as user '" << _args.username << "'" << std::endl;
             std::cout << "password: ";
@@ -313,6 +333,8 @@ void Client::processUserInput() {
             std::getline(std::cin, password);
             if (password.back() == '\n') password.pop_back();
             sendMessage("REGISTER", {{"username", _args.username}, {"password", password}});
+        } else if (line[0] == 'n') {
+            stop();
         }
         break;
     }
@@ -380,6 +402,24 @@ void Client::processCommands() {
             return;
         }
         sendMessage("RMDIR", {{"path", path}});
+    }
+    else if (cmd == "COPY") {
+        std::string src, dst;
+        ss >> src >> dst;
+        if (src.empty() || dst.empty()) {
+            std::cout << "usage: COPY <src> <dst>" << std::endl;
+            return;
+        }
+        sendMessage("COPY", { {"src", src}, {"dst", dst} });
+    }
+    else if (cmd == "MOVE") {
+        std::string src, dst;
+        ss >> src >> dst;
+        if (src.empty() || dst.empty()) {
+            std::cout << "usage: MOVE <src> <dst>" << std::endl;
+            return;
+        }
+        sendMessage("MOVE", { {"src", src}, {"dst", dst} });
     }
     else if (cmd == "UPLOAD") {
         std::string src, dst;
@@ -488,6 +528,8 @@ void Client::printHelp() {
     std::cout << "CD <path>\n";
     std::cout << "MKDIR <path>\n";
     std::cout << "RMDIR <path>\n";
+    std::cout << "COPY <src> <dst>\n";
+    std::cout << "MOVE <src> <dst>\n";
     std::cout << "UPLOAD <local_path> [remote_path]\n";
     std::cout << "DOWNLOAD <remote_path> [local_path]\n";
     std::cout << "EXIT\n";

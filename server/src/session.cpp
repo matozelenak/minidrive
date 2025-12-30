@@ -108,6 +108,8 @@ void Session::processMessage(const MsgPayload &payload) {
         else if (cmd == "CD") handleCD(args);
         else if (cmd == "MKDIR") handleMKDIR(args);
         else if (cmd == "RMDIR") handleRMDIR(args);
+        else if (cmd == "COPY") handleCOPY(args, false);
+        else if (cmd == "MOVE") handleCOPY(args, true);
         else if (cmd == "AUTH") handleAUTH(args);
         else if (cmd == "REGISTER") handleREGISTER(args);
         else if (cmd == "UPLOAD") handleUPLOAD(args, data);

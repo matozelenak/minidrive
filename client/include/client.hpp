@@ -28,7 +28,7 @@ public:
     void printLIST(const nlohmann::json &files);
     void printHelp();
 
-    enum class State {AUTH, REG, COMMAND, UPLOAD, DOWNLOAD, DOWNLOADING};
+    enum class State {CHECK_USER, AUTH, REG, COMMAND, UPLOAD, DOWNLOAD, DOWNLOADING};
 
 private:
     std::mutex _mutex;

@@ -27,6 +27,8 @@ public:
     void handleCD(const nlohmann::json &args);
     void handleMKDIR(const nlohmann::json &args);
     void handleRMDIR(const nlohmann::json &args);
+    void handleCOPY(const nlohmann::json &args, bool move);
+    
     void handleAUTH(const nlohmann::json &args);
     void handleREGISTER(const nlohmann::json &args);
 

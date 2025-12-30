@@ -191,6 +191,54 @@ void Session::handleRMDIR(const json &args) {
     sendOkReply("");
 }
 
+void Session::handleCOPY(const nlohmann::json &args, bool move) {
+    if (_mode == mode::NOT_AUTHENTICATED) {
+        spdlog::warn("session is not authenticated");
+        sendFailReply(minidrive::error::ACCESS_DENIED.code(), "not authenticated");
+        return;
+    }
+    if (!args.contains("src")) {
+        spdlog::warn("request does not contain 'src'");
+        sendFailReply(minidrive::error::MISSING_ARGUMENT.code(), "src");
+        return;
+    }
+    if (!args.contains("dst")) {
+        spdlog::warn("request does not contain 'dst'");
+        sendFailReply(minidrive::error::MISSING_ARGUMENT.code(), "dst");
+        return;
+    }
+    std::string src = args["src"];
+    std::string dst = args["dst"];
+    auto[resultSrc, validSrc] = _server->fs_resolvePath(this, src);
+    if (!validSrc) {
+        spdlog::warn("access denied: {}", resultSrc.string());
+        sendFailReply(minidrive::error::ACCESS_DENIED.code(), resultSrc.string());
+        return;
+    }
+    auto[resultDst, validDst] = _server->fs_resolvePath(this, dst);
+    if (!validDst) {
+        spdlog::warn("access denied: {}", resultDst.string());
+        sendFailReply(minidrive::error::ACCESS_DENIED.code(), resultDst.string());
+        return;
+    }
+    if (!_server->fs_exists(resultSrc)) {
+        spdlog::warn("target does not exist: {}", resultSrc.string());
+        sendFailReply(minidrive::error::TARGET_NOT_FOUND.code(), resultSrc.string());
+        return;
+    }
+
+    try {
+        fs::copy(resultSrc, resultDst);
+        if (move) fs::remove_all(resultSrc);
+    } catch (const fs::filesystem_error &e) {
+        spdlog::error("copy/move failed: {}", e.what());
+        sendFailReply(minidrive::error::FS_ERROR.code(), e.what());
+        return;
+    }
+
+    sendOkReply("");
+}
+
 
 void Session::handleAUTH(const json &args) {
     // TODO error if already authenticated
@@ -218,19 +266,27 @@ void Session::handleAUTH(const json &args) {
     }
     // private mode
     else if (mode == "private") {
-        spdlog::info("attempting authentication as private user");
         if (!args.contains("username")) {
             spdlog::warn("request does not contain 'username'");
             sendFailReply(minidrive::error::MISSING_ARGUMENT, "username");
             return;
         }
+        const std::string &username = args["username"];
+
         if (!args.contains("password")) {
-            spdlog::warn("request does not contain 'password'");
-            sendFailReply(minidrive::error::MISSING_ARGUMENT, "password");
+            spdlog::info("checking for user existence: '{}'", username);
+            if (_server->auth_userExists(username)) {
+                spdlog::info("found");
+                sendOkReply("");
+            } else {
+                spdlog::info("not found");
+                sendFailReply(minidrive::error::USER_NOT_FOUND.code(), username);
+            }
             return;
         }
-        const std::string &username = args["username"];
+
         const std::string &password = args["password"];
+        spdlog::info("attempting authentication as private user");
         if (_server->auth_userExists(username)) {
             if (_server->auth_verifyPassword(username, password)) {
                 if (!_server->fs_createDir(USERDATA_DIR_PATH / username)) {
