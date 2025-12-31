@@ -241,7 +241,6 @@ void Session::handleCOPY(const nlohmann::json &args, bool move) {
 
 
 void Session::handleAUTH(const json &args) {
-    // TODO error if already authenticated
     if (_mode != mode::NOT_AUTHENTICATED) {
         spdlog::warn("session already authenticated");
         sendFailReply(minidrive::error::ALREADY_AUTHENTICATED.code(), "");
@@ -388,7 +387,7 @@ void Session::handleUPLOAD(const json &args, const json &data) {
     _transfer.command = data;
     _transfer.size = args["size"];
     _transfer.sequenceNum = 0;
-    _transfer.chunkSize = 100; // TODO increase
+    _transfer.chunkSize = 4096;
     _transfer.resolvedPath = result;
     _transfer.resolvedPathTmp = result;
     _transfer.resolvedPathTmp.replace_extension(result.extension().string() + ".part");
@@ -430,12 +429,13 @@ void Session::handleDOWNLOAD(const json &args, const json &data) {
         _transfer.stream.seekg(_transfer.sequenceNum);
         uintmax_t actualSize = std::min(_transfer.chunkSize, _transfer.size - _transfer.sequenceNum);
         MsgPayload payload(actualSize);
-        _transfer.stream.read(reinterpret_cast<char *>(payload.data()), payload.size()); // TODO handle errors
+        _transfer.stream.read(reinterpret_cast<char *>(payload.data()), payload.size());
         spdlog::debug("sending {} Bytes, seq: {}", actualSize, _transfer.sequenceNum);
         _cmdSocket.sendMessage(data_type::DATA, std::move(payload));
         return;
     }
 
+    // check if the file actually exists and if the user has access to it
 
     if (!args.contains("src")) {
         spdlog::warn("request does not contain 'src'");
@@ -474,7 +474,7 @@ void Session::handleDOWNLOAD(const json &args, const json &data) {
     _transfer.command = data;
     _transfer.size = size;
     _transfer.sequenceNum = 0;
-    _transfer.chunkSize = 100; // TODO increase
+    _transfer.chunkSize = 4096;
     _transfer.resolvedPath = result;
     _transfer.resolvedPathTmp = "";
     

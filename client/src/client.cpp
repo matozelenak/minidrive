@@ -110,7 +110,7 @@ void Client::processData(const MsgPayload &payload) {
         spdlog::error("received file data but there are no active downloads");
         return;
     }
-    _transfer.stream.write(reinterpret_cast<const char*>(payload.data()), payload.size()); // TODO handle errors
+    _transfer.stream.write(reinterpret_cast<const char*>(payload.data()), payload.size());
     _transfer.sequenceNum += payload.size();
     spdlog::debug("written {} Bytes, seq: {}", payload.size(), _transfer.sequenceNum);
 
@@ -123,7 +123,7 @@ void Client::processData(const MsgPayload &payload) {
         _transfer.active = false;
         _transfer.stream.flush();
         _transfer.stream.close();
-        fs::rename(_transfer.resolvedPathTmp, _transfer.resolvedPath); // TODO handle errors
+        fs::rename(_transfer.resolvedPathTmp, _transfer.resolvedPath); 
         _client.sendMessage(json({ {"cmd", "DOWNLOAD"}, {"seq", _transfer.sequenceNum} }).dump()); // tell server the transfer is finished
         _state = State::COMMAND;
         spdlog::info("transfer finished");
@@ -252,7 +252,7 @@ void Client::reactToReply() {
         _transfer.stream.seekg(_transfer.sequenceNum);
         uintmax_t actualSize = std::min(_transfer.chunkSize, _transfer.size - _transfer.sequenceNum);
         MsgPayload payload(actualSize);
-        _transfer.stream.read(reinterpret_cast<char *>(payload.data()), payload.size()); // TODO handle errors
+        _transfer.stream.read(reinterpret_cast<char *>(payload.data()), payload.size());
         spdlog::debug("sending {} Bytes, seq: {}", actualSize, _transfer.sequenceNum);
         sendData(std::move(payload));
 

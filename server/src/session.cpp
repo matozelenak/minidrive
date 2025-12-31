@@ -130,7 +130,7 @@ void Session::processData(const MsgPayload &payload) {
         spdlog::error("received file data but there are no active uploads");
         return;
     }
-    _transfer.stream.write(reinterpret_cast<const char*>(payload.data()), payload.size()); // TODO handle errors
+    _transfer.stream.write(reinterpret_cast<const char*>(payload.data()), payload.size());
     _transfer.sequenceNum += payload.size();
     spdlog::debug("written {} Bytes, seq: {}", payload.size(), _transfer.sequenceNum);
 
@@ -143,7 +143,7 @@ void Session::processData(const MsgPayload &payload) {
         _transfer.active = false;
         _transfer.stream.flush();
         _transfer.stream.close();
-        fs::rename(_transfer.resolvedPathTmp, _transfer.resolvedPath); // TODO handle errors
+        fs::rename(_transfer.resolvedPathTmp, _transfer.resolvedPath);
         deleteTransferFile();
         spdlog::info("transfer finished");
     }
